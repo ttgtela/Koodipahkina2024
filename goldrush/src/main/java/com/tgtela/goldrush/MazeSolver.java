@@ -1,598 +1,522 @@
 package com.tgtela.goldrush;
 
-import javax.websocket.ClientEndpoint;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
-
-import javax.websocket.OnMessage;
-import javax.websocket.OnOpen;
-import javax.websocket.Session;
-import java.io.IOException;
-import java.net.URI;
-import java.util.Random;
+import java.util.PriorityQueue;
 import java.util.Set;
-import java.util.Stack;
-import java.util.function.Predicate;
-
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.util.ajax.JSON;
-import org.eclipse.jetty.websocket.api.*;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
 
 import javafx.util.Pair;
+/**
+ * @author Tenho Laakkio.
+ * Code for the Monad 2024 Rekry challenge
+ */
 
-import org.eclipse.jetty.websocket.*;
-import javax.websocket.server.ServerContainer;
-
-
+/**
+ * a class for solving the games maze and generating actions to navigate through the maze.
+ * It works by first mapping the entire maze until there is no more unvisited coords. It
+ * does this by going to an unvisited neighbour or if there isn't one, it will find the
+ * shortest path by actions to the first unvisited coords. If it accidentally stumbles
+ * to the target coord before it has mapped the entire maze, it will perform the reset
+ * actions so as to not end the game prematurely. After mapping the entire maze, it will
+ * reset so that the move count goes to zero. Then it will find the shortest path to 
+ * the target taking into account the cost of the actions between coords and 
+ * also the manhattan distance.
+ */
 public class MazeSolver 
 
 {
-	
+    static boolean targetFound=false;
+    static boolean resetedBeforeFindingPath=false;
+    static List<Action> shortestPath=new ArrayList<Action>();
+    static List<Action> shortestPathToTarget=new ArrayList<Action>();
 	
 
-	public static Action getTo(Location start, Location dest, int currentRotation) {
+    /**
+     * Determines the action and rotation needed to move from the start coordinate to the destination coordinate.
+     *
+     * @param start            The starting coordinate.
+     * @param dest             The destination coordinate.
+     * @param currentRotation  The current rotation.
+     * @return A Pair containing the action and rotation to move from start to dest.
+     */
+	public static Pair<Action,Integer> getTo(Coord start, Coord dest, int currentRotation) {
 		Action action = null;
+	    int rotation = -1;
+
 	    if (start.getX() == dest.getX() && start.getY() == dest.getY()) {
-	        return action;
-	    }
-
-	    int rotation;
-
-	    if (start.getX() == dest.getX() && start.getY() == dest.getY() + 1) {
-	        rotation = 0;
-	        if (currentRotation==rotation) {
-	        	return null;
-	        }
-	        action=new RotateAction(0);
-	        return action;
-	    } else if (start.getX() == dest.getX() + 1 && start.getY() == dest.getY()) {
-	        rotation = 90;
-	        if (currentRotation==rotation) {
-	        	return null;
-	        }
-	        action=new RotateAction(90);
-	        return action;
-	    } else if (start.getX() == dest.getX() && start.getY() == dest.getY() - 1) {
-	        rotation = 180;
-	        if (currentRotation==rotation) {
-	        	return null;
-	        }
-	        action=new RotateAction(180);
-	        return action;
-	    } else if (start.getX() == dest.getX() - 1 && start.getY() == dest.getY()) {
-	        rotation = 270;
-	        if (currentRotation==rotation) {
-	        	return null;
-	        }
-	        action=new RotateAction(270);
-	        return action;
-	    } else {
+	        // No need to move if start and dest are the same
 	        return null;
 	    }
 
+	    if (start.getX() == dest.getX() && start.getY()-1 == dest.getY()) {
+	        rotation = 0;
+	    } else if (start.getX() + 1 == dest.getX() && start.getY() == dest.getY()) {
+	        rotation = 90;
+	    } else if (start.getX() == dest.getX() && start.getY()+1 == dest.getY()) {
+	        rotation = 180;
+	    } else if (start.getX() - 1 == dest.getX() && start.getY() == dest.getY()) {
+	        rotation = 270;
+	    }
+
+	    if (rotation != -1 && rotation != currentRotation) {
+	        action = new RotateAction(rotation);
+	    } else {
+	        rotation = currentRotation;
+	    }
+	    return new Pair<>(action, rotation);
+
 	    
 	}
+	 /**
+     * Sets the discovered status of the neighboring cells of the current position in the maze.
+     *
+     * @param maze      The maze object.
+     * @param coord     The current coordinate.
+     * @param gameState The game state.
+     * @return The updated maze object.
+     */
+	public static Maze setNeighbours(Maze maze,Coord coord,GameState gameState) {
+		for (Coord neighbours:maze.canGetToCoord(maze.getCurrentPosition().getY(),maze.getCurrentPosition().getX(), maze.getCurrentPosition().getSquare())) {
+			maze.getGrid()[neighbours.getY()][neighbours.getX()].setDiscovered(true);
+			if (maze.getGrid()[neighbours.getY()][neighbours.getX()].getX()==maze.getTarget().getX()
+					&& maze.getGrid()[neighbours.getY()][neighbours.getX()].getY()==maze.getTarget().getY()){
+						targetFound=true;
+						 
+						
+					}
+		}
+		return maze;
+	}
+	 /**
+     * Checks if there are any unvisited neighboring cells in the maze.
+     *
+     * @param maze      The maze object.
+     * @param gameState The game state.
+     * @return True if there are unvisited neighbors, false otherwise.
+     */
+		public static boolean anyGoodNeighbours(Maze maze,GameState gameState) {
+			for (Coord neighbour:maze.canGetToCoord(maze.getCurrentPosition().getY(), 
+					maze.getCurrentPosition().getX(), maze.getCurrentPosition().getSquare())) {
+				if (!maze.getGrid()[neighbour.getY()][neighbour.getX()].isVisited()) {
+					return true;
+				}
+				
+			}
+			return false;
+		}
 
-	    public static ActionGenerationResult generateAction(Player player,Action prevAction,GameState gameState) {
-    		player.addLocation(gameState.getCurrent().getX(), gameState.getCurrent().getY());
-    		player.addVisited(new Pair<Integer,Integer>(gameState.getCurrent().getX(),gameState.getCurrent().getY()));
-    		
+	    /**
+	     * Sets up the maze with the current game state.
+	     *
+	     * @param maze      The maze object.
+	     * @param gameState The game state.
+	     * @return The updated maze object.
+	     */
+		public static Maze setMaze(Maze maze,GameState gameState) {
+			maze.setCurrentPosition(maze.getGrid()[gameState.getCurrent().getY()][gameState.getCurrent().getX()]);
+	    	maze.setCurrentRotation(gameState.getCurrentRotation());
+	    	maze.getCurrentPosition().setDiscovered(true);
+	    	maze.getCurrentPosition().setVisited(true);
+	    	maze.getCurrentPosition().setTimesVisited(maze.getCurrentPosition().getTimesVisited()+1);
+	    	maze.getCurrentPosition().setSquare(gameState.getSquare());
+	    	maze=setNeighbours(maze,maze.getGrid()[maze.getCurrentPosition().getY()][maze.getCurrentPosition().getX()],gameState);
+	    	return maze;
+			
+		}
+		
+		 /**
+	     * Generates the next action based on the current maze, previous action, and game state.
+	     *
+	     * @param maze      The maze object.
+	     * @param prevAction The previous action.
+	     * @param gameState The game state.
+	     * @param resetMode True if in reset mode, false otherwise.
+	     * @return An ActionGenerationResult containing the next action and the updated maze.
+	     */
+	    
+	    public static ActionGenerationResult generateAction(Maze maze,Action prevAction,GameState gameState,boolean resetMode) {
 	    	if (prevAction==null) {
-		    	if (gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(gameState.getCurrentRotation())) {
-		    		ActionGenerationResult result=new ActionGenerationResult();
-		        	Action newAction=new MoveAction(gameState.getCurrentRotation());
-		        	result.setAction(newAction);
-		        	result.setUpdatedPlayer(player);
-		        	return result;
-		    	}
-		    	else if (!gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(gameState.getCurrentRotation())) {
-		    		Integer rotation=exploreNeighbours(player,gameState,gameState.getCurrentRotation());
-		    		Action nextAction=new RotateAction(rotation);
-		    		ActionGenerationResult result=new ActionGenerationResult();
-		    		result.setAction(nextAction);
-		    		result.setUpdatedPlayer(player);
-		    		return result;
-		    	}
-	    	}
-	    	else if (prevAction instanceof RotateAction) {
-	    		ActionGenerationResult result=new ActionGenerationResult();
-	    		Action nextAction=new MoveAction(gameState.getCurrentRotation());
-	    		result.setAction(nextAction);
-	    		result.setUpdatedPlayer(player);
-	    		return result;
-	    	}
+	    		maze=new Maze(gameState.getRows(),gameState.getColumns());
+	    		maze.setTarget(gameState.getTarget().getY(), gameState.getTarget().getX());
+ 	    	}
 	    	
-	    	ActionGenerationResult result1=dfs(player,gameState,gameState.getCurrentRotation());
-	    	return result1;
-	    }
 
-	    private static ActionGenerationResult dfs(Player player,GameState gameState, int currentRotation) {
-	    	if (player.getTimesVisited().get(new Pair<Integer,Integer>(gameState.getCurrent().getX(),gameState.getCurrent().getY()))>1 
-	    			&& !gameState.getCurrent().getNeighbours().isEmpty()) {
-	    		ActionGenerationResult result=new ActionGenerationResult();
-	    		Action newAction=new RotateAction(player.getPosition().getNeighbours().get(0));
-	    		result.setAction(newAction);
-	        	result.setUpdatedPlayer(player);
-	        	return result;
-	    	}
+	    	maze=setMaze(maze,gameState);
 	    	
-	    	addNeighbours(gameState.getCurrent(),player,gameState);
 	    	
-	    	if (exploreNeighbours(player,gameState,gameState.getCurrentRotation())!=null) {
-	    		Integer next=exploreNeighbours(player,gameState,gameState.getCurrentRotation());
-	    		gameState.getCurrent().removeNeighbour(next);
-	        	ActionGenerationResult result=new ActionGenerationResult();
-	        	Action newAction=new RotateAction(next);
-	        	result.setAction(newAction);
-	        	result.setUpdatedPlayer(player);
-	        	return result;
-	        }
-	    	else if(!gameState.getCurrent().getNeighbours().isEmpty()) {
-	    		int rotation=gameState.getCurrent().getNeighbours().get(0);
-	    		gameState.getCurrent().removeNeighbour(Integer.valueOf(rotation));
-	    		ActionGenerationResult result=new ActionGenerationResult();
-	        	Action newAction=new RotateAction(rotation);
-	        	result.setAction(newAction);
-	        	result.setUpdatedPlayer(player);
-	        	return result;
-	    		
-	    		
-	    	}
-	    	else if (gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(gameState.getCurrentRotation())) {
-	    		ActionGenerationResult result=new ActionGenerationResult();
-	        	Action newAction=new MoveAction(gameState.getCurrentRotation());
-	        	result.setAction(newAction);
-	        	result.setUpdatedPlayer(player);
-	        	return result;
+	    	if (!anyGoodNeighbours(maze,gameState)) {
+	    		maze.setBackTrack(true);
 	    	}
 	    	else {
-	    		System.out.println("moi");
-	    		List<Integer> priority=prioritizeRotations(gameState.getCurrentRotation(),player,gameState);
-	    		
-	    		if (gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(priority.get(0))) {
-	    			int rotation=priority.get(0);
-	    	        Action newAction=new RotateAction(rotation);
-	    	        ActionGenerationResult result=new ActionGenerationResult();
-	    	        result.setAction(newAction);
-	            	result.setUpdatedPlayer(player);
-	            	return result;
-	    	        
-	    			
-	    		}
-	    		else if (gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(priority.get(1))) {
-	    			int rotation=priority.get(1);
-	    	        Action newAction=new RotateAction(rotation);
-	    	        ActionGenerationResult result=new ActionGenerationResult();
-	    	        result.setAction(newAction);
-	            	result.setUpdatedPlayer(player);
-	            	return result;
-	    	        
-	    			
-	    		}
-	    		else if (gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(priority.get(2))) {
-	    			int rotation=priority.get(2);
-	    	        Action newAction=new RotateAction(rotation);
-	    	        ActionGenerationResult result=new ActionGenerationResult();
-	    	        result.setAction(newAction);
-	            	result.setUpdatedPlayer(player);
-	            	return result;
-	    	        
-	    			
-	    		}
-	    		else if (gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(priority.get(3))) {
-	    			int rotation=priority.get(3);
-	    	        Action newAction=new RotateAction(rotation);
-	    	        ActionGenerationResult result=new ActionGenerationResult();
-	    	        result.setAction(newAction);
-	            	result.setUpdatedPlayer(player);
-	            	return result;
-	    	        
-	    			
-	    		}
+	    		maze.setBackTrack(false);
+	    		shortestPath.clear();
+	    	}
+	    	if (targetFound==true && maze.isDiscoveredUnvisited()) {
 	    		ActionGenerationResult result=new ActionGenerationResult();
+	    		result.setAction(new ResetAction());
+	    		result.setUpdatedMaze(maze);
+	    		targetFound=false;
 	    		return result;
-	    		
 	    	}
-	    	
-	    	
-	  
-	        
-	        
-	        
-	    }
-	    private static void addNeighbours(Coord currentLocation,Player player, GameState gameState) {
-	    	List<Integer> neighbours=new ArrayList<Integer>();
-	    	
-	    	
-	    	if (!player.isVisited(gameState.getCurrent().getX(),gameState.getCurrent().getY()+1) && 
-	    			gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(180)){
-	    		neighbours.add(180);
-
-
-	    	}
-	    	if (!player.isVisited(gameState.getCurrent().getX()+1,gameState.getCurrent().getY())&& 
-	    			gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(90)){
-	    		 neighbours.add(90);
-	    
-	    	}
-	    	if (!player.isVisited(gameState.getCurrent().getX()-1,gameState.getCurrent().getY()) &&
-	    			gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(270)){
-	    		Coord coord=new Coord(gameState.getCurrent().getX()-1,gameState.getCurrent().getY());
-	    		neighbours.add(270);
-	    		
-	    
-	    	}
-	    	if (!player.isVisited(gameState.getCurrent().getX(),gameState.getCurrent().getY()-1) 
-	    			&& gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(0)){
-	    		Coord coord=new Coord(gameState.getCurrent().getX(),gameState.getCurrent().getY()-1);
-	    		neighbours.add(0);
-	    		
-	    
-	    	}
-	    	gameState.getCurrent().setNeighbours(neighbours);
-	    	
-	    }
-	    private static Coord goStraight(GameState gameState, Location currentLocation,int currentRotation) {
-	    	switch (currentRotation){
-	    	case 0:
-	    		return new Coord (gameState.getCurrent().getX(),gameState.getCurrent().getY()-1);
-	    	
-	    	case 90:
-	    		return new Coord (gameState.getCurrent().getX()+1,gameState.getCurrent().getY());
-	    		
-	    	case 180:
-	    		return new Coord (gameState.getCurrent().getX(),gameState.getCurrent().getY()+1);
-	    	
-	    	case 270:
-	    		return new Coord (gameState.getCurrent().getX()-1,gameState.getCurrent().getY());
-	    		
-	    	}
-	    	return null;
-	    }
-	    private static int chooseRotationNoWalls(List<Integer> notWalls,int currentRotation) {
-	    	switch(currentRotation) {
-	    	
-	    	case 0:
-	    		if (notWalls.contains(90)) {
-	    		return 90;
-	    		}
-	    		else if (notWalls.contains(180)) {
-	    			return 180;
+	    	else if (!maze.isDiscoveredUnvisited()) {
+	    		maze.setBackTrack(false);
+	    		if (resetedBeforeFindingPath) {
+	    			maze=setMaze(maze,gameState);
+	    		ActionGenerationResult result=reset(maze,gameState,prevAction);
+	    		return result;
 	    		}
 	    		else {
-	    			return 270;
+	    			resetedBeforeFindingPath=true;
+	    			ActionGenerationResult result=new ActionGenerationResult();
+	    			maze=setMaze(maze,gameState);
+	    			result.setAction(new ResetAction());
+	    			result.setUpdatedMaze(maze);
+	    			return result;
 	    		}
-	    	
-	    	case 90:
-	    		if (notWalls.contains(180)) {
-		    		return 180;
-		    		}
-		    		else if (notWalls.contains(270)) {
-		    			return 270;
-		    		}
-		    		else {
-		    			return 0;
-		    		}
-		    	
-	    		
-	    	case 180:
-	    		if (notWalls.contains(270)) {
-		    		return 270;
-		    		}
-		    		else if (notWalls.contains(0)) {
-		    			return 0;
-		    		}
-		    		else {
-		    			return 90;
-		    		}
-		    	
-	    	
-	    	case 270:
-	    		if (notWalls.contains(0)) {
-		    		return 0;
-		    		}
-		    		else if (notWalls.contains(90)) {
-		    			return 90;
-		    		}
-		    		else {
-		    			return 180;
-		    		}
-		    	
-	    		
-	    	default: 
-	    		return -1;
 	    	}
 	    	
-	    }
-	    private static Integer exploreNeighbours(Player player,GameState gameState, int currentRotation) {
 	    	
-	    	ArrayList<Integer> priority=prioritizeRotations(currentRotation,player,gameState);
-	    	if (priority.isEmpty()) {
-	    		return null;
-	    	}
 	    	
-	    	if (gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(priority.get(0))){
+	    	
+	    	
+	    	if (maze.isBackTrack()) {
+	    		ActionGenerationResult result=backTrack(maze,gameState,prevAction);
+	    		return result;
 	    		
-	    		
-		    	return priority.get(0);
+	    		}
 
-
-	    	}
-	    	if (gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(priority.get(1))){
-	    		
-		    		return priority.get(1);
-	    		
-	    
-	    	}
-	    	if (gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(priority.get(2))){
-	    		return priority.get(2);
-	    		
-	    
-	    	}
-	    	if (gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(priority.get(3))){
-	    		
-	    		return priority.get(3);
-	    		
-	    		
-	    
-	    	}
-	    	if (gameState.getCurrent().whichNotWalls(gameState.getSquare()).contains(currentRotation)) {
-	    		return currentRotation;
-	    	}
-	    	System.out.println("moi");
-	    	return null;
-	    			
-	    	
+    		ActionGenerationResult result=solve(gameState,maze);
+	    	return result;
 	    }
-	    private static Coord coordMatchingRotation(int rotation,Coord current,Player player){
-	    	switch (rotation) {
-	    	case 0:
-	    		if (current.isVisited()) {
-	    			return player.getLocation(current.getX(), current.getY()-1);
+	    
+	    /**
+	     * Solves the maze by generating the next action based on the current game state and maze.
+	     *
+	     * @param gameState The game state.
+	     * @param maze      The maze object.
+	     * @return An ActionGenerationResult containing the next action and the updated maze.
+	     */
+	    public static ActionGenerationResult solve(GameState gameState,Maze maze) {
+	    	ActionGenerationResult result=new ActionGenerationResult();
+	    	for (Coord neighbour:maze.canGetToCoord(maze.getCurrentPosition().getY(),maze.getCurrentPosition().getX(), maze.getCurrentPosition().getSquare())) {
+	    		if (maze.getGrid()[neighbour.getY()][neighbour.getX()].isDiscovered() && !maze.getGrid()[neighbour.getY()][neighbour.getX()].isVisited()) {
+	    			Pair<Action,Integer> pair=getTo(maze.getGrid()[maze.getCurrentPosition().getY()][maze.getCurrentPosition().getX()],
+    						maze.getGrid()[neighbour.getY()][neighbour.getX()],maze.getCurrentRotation());
+	    			if (pair!=null) {
+	    				
+	    				if (pair.getValue()==maze.getCurrentRotation()) {
+	    					Action nextAction=new MoveAction(maze.getCurrentRotation());
+	    					result.setAction(nextAction);
+	    					result.setUpdatedMaze(maze);
+	    					return result;
+	    				}
+	    				result.setAction(pair.getKey());
+	    				result.setUpdatedMaze(maze);
+
+	    				return result;
+	    				
+	    				
+	    			}
+	    
 	    		}
-	    		return new Coord(current.getX(),current.getY()-1);
+			}
 	    	
-	    	case 90:
-	    		if (player.isVisited(current.getX()+1,current.getY())) {
-	    			return player.getLocation(current.getX()+1, current.getY());
-	    		}
-	    		return new Coord(current.getX()+1,current.getY());
-	    	
-	    	case 180:
-	    		if (player.isVisited(current.getX(),current.getY()+1 )) {
-	    			return player.getLocation(current.getX(), current.getY()+1);
-	    		}
-	    		return new Coord(current.getX(),current.getY()+1);
-	    	
-	    	case 270:
-	    		if (player.isVisited(current.getX()-1,current.getY())) {
-	    			return player.getLocation(current.getX()-1, current.getY());
-	    		}
-	    		return new Coord(current.getX()-1,current.getY());
-	    	default: 
-	    		break;
-	    	
+	    	if (result.getAction()==null) {
+	    		result.setAction(new MoveAction(maze.getCurrentRotation()));
+				result.setUpdatedMaze(maze);
+	    		
 	    	}
-	    	return null;
-	    	
+	    	return result;
 	    }
 
-	    private static int chooseNewRotation(int currentRotation) {
-	        // Choose a new rotation based on the current rotation
-	        switch (currentRotation) {
-	            case 0:
-	                return 180;
-	            case 90:
-	                return 270;
-	            case 180:
-	                return 0;
-	            case 270:
-	                return 90;
-	            default:
-	                return 0;
+	    /**
+	     * Performs backtracking in the maze.
+	     *
+	     * @param maze      The maze object.
+	     * @param gameState The game state.
+	     * @param prevAction The previous action.
+	     * @return An ActionGenerationResult containing the next action and the updated maze.
+	     */
+	    private static ActionGenerationResult backTrack(Maze maze,GameState gameState,Action prevAction) {
+	    	if (shortestPath.isEmpty() || shortestPath==null) {
+    			shortestPath=shortestPathToUnvisited(maze,maze.getCurrentPosition());
+    		}
+	    	
+	    	Action nextAction=shortestPath.get(0);
+    		shortestPath.remove(0);
+    		if (nextAction!=null) {
+    		
+    		ActionGenerationResult result=new ActionGenerationResult();
+			result.setAction(nextAction);
+			result.setUpdatedMaze(maze);
+			return result;
+    		}
+
+	    
+    		
+    		return new ActionGenerationResult();
+	    }
+	    
+	    /**
+	     * Resets the maze to find the shortest path to the target.
+	     *
+	     * @param maze      The maze object.
+	     * @param gameState The game state.
+	     * @param prevAction The previous action.
+	     * @return An ActionGenerationResult containing the next action and the updated maze.
+	     */	
+	    private static ActionGenerationResult reset(Maze maze,GameState gameState,Action prevAction) {
+	    	if (shortestPathToTarget.isEmpty() || shortestPathToTarget==null) {
+    			shortestPathToTarget=shortestPathToTarget(maze,maze.getCurrentPosition(),maze.getTarget());
+    		}
+	    	
+	    	Action nextAction=shortestPathToTarget.get(0);
+    		shortestPathToTarget.remove(0);
+    		if (nextAction!=null) {
+    		
+    		ActionGenerationResult result=new ActionGenerationResult();
+			result.setAction(nextAction);
+			result.setUpdatedMaze(maze);
+			return result;
+    		}
+
+	    
+    		
+    		return new ActionGenerationResult();
+	    }
+	    	
+
+	    /**
+	     * Finds the shortest path to the target in the maze.
+	     *
+	     * @param maze  The maze object.
+	     * @param start The starting coordinate.
+	     * @param target The target coordinate.
+	     * @return The shortest path to the target.
+	     */
+	    public static List<Action> shortestPathToTarget(Maze maze, Coord start, Coord target) {
+	        PriorityQueue<Node> open = new PriorityQueue<>(Comparator.comparingInt(Node::getTotalCost));
+	        Map<Node, Node> visited = new HashMap<>();
+	        Set<Coord> visitedCoords = new HashSet<>();
+	        int currentRotation=maze.getCurrentRotation();
+	        open.offer(new Node(start, null, 0, calculateDistance(start, target),currentRotation));
+	        
+	        while (!open.isEmpty()) {
+	            Node current = open.poll();
+	            currentRotation=current.getCurrentRotation();
+	            if (current.getCoord().equals(target)) {
+	                return reconstructPathToTarget(current, visited,maze);
+	                
+	            }
+
+	            
+	            visitedCoords.add(current.getCoord());
+	            
+
+
+	            for (Pair<Integer, Coord> pair : maze.canGetToCoordWithRotationTarget(current.getCoord().getY(), 
+	            		current.getCoord().getX(), current.getCoord().getSquare())) {
+	                Coord nextCoord = pair.getValue();
+	                if (visitedCoords.contains(nextCoord)) {
+	                	continue;
+	                }
+	                
+	                int rotation=pair.getKey();
+	                Action action;
+	                if (rotation==currentRotation) {
+	                	action=new MoveAction(currentRotation);
+	                }
+	                else {
+	                	action=new RotateAction(rotation);
+	                }
+	                int newCost=0;
+	                if (action instanceof RotateAction) {
+	                newCost = current.getCost() + 2;
+	                
+	                }
+	                else {
+	                	newCost = current.getCost() + 1;
+	                }
+	                int heuristic = calculateDistance(nextCoord, target);
+	                Node newNode=new Node(nextCoord, action, newCost, heuristic,rotation);
+	                visited.put(newNode, current);
+	                open.offer(newNode);
+	            }
 	        }
-	    }
-	    private static ActionGenerationResult directionAction(GameState gameState,Player player) {
-	    	Coord loc=player.getPosition();
-    		ArrayList<Integer> walls=loc.whichNotWalls(gameState.getSquare());
-    		int rotation=player.getRotation();
-    		if (!walls.contains("North")) {
-    			if (rotation==0) {
-    				ActionGenerationResult result = new ActionGenerationResult();
-    	            result.setAction(new MoveAction(player.getRotation()));
-    	            result.setUpdatedPlayer(player);
-    	            return result;
-    			}
-    			else {
-    				ActionGenerationResult result = new ActionGenerationResult();
-    	            result.setAction(new RotateAction(0));
-    	            result.setUpdatedPlayer(player);
-    	            return result;
-    			}
-    		}
-    		if (!walls.contains("East")) {
-    			if (rotation==90) {
-    				ActionGenerationResult result = new ActionGenerationResult();
-    	            result.setAction(new MoveAction(player.getRotation()));
-    	            result.setUpdatedPlayer(player);
-    	            return result;
-    			}
-    			else {
-    				ActionGenerationResult result = new ActionGenerationResult();
-    	            result.setAction(new RotateAction(90));
-    	            result.setUpdatedPlayer(player);
-    	            return result;
-    			}
-    		}
-    		if (!walls.contains("West")) {
-    			if (rotation==270) {
-    				ActionGenerationResult result = new ActionGenerationResult();
-    	            result.setAction(new MoveAction(player.getRotation()));
-    	            result.setUpdatedPlayer(player);
-    	            return result;
-    			}
-    			else {
-    				ActionGenerationResult result = new ActionGenerationResult();
-    	            result.setAction(new RotateAction(0));
-    	            result.setUpdatedPlayer(player);
-    	            return result;
-    			}
-    		}
-    		if (!walls.contains("South")) {
-    			if (rotation==180) {
-    				ActionGenerationResult result = new ActionGenerationResult();
-    	            result.setAction(new MoveAction(player.getRotation()));
-    	            result.setUpdatedPlayer(player);
-    	            return result;
-    			}
-    			else {
-    				ActionGenerationResult result = new ActionGenerationResult();
-    	            result.setAction(new RotateAction(180));
-    	            result.setUpdatedPlayer(player);
-    	            return result;
-    			}
-    		}
-    		ActionGenerationResult result = new ActionGenerationResult();
-    		return result;
+
+	        return Collections.emptyList(); // No path found
 	    }
 	    
-	    private static String getCurrentDirection(int currentRotation) {
-	    	 switch (currentRotation) {
-		        case 0:
-		        	return "North";
-		        case 90:
-		        	return "East";
-		        case 180:
-		        	
-		        	return "South";
-		        case 270:
-		        	
-		        	return "West";
-		        default:
-		        	break;
-		        }
-		        return "Not a valid Direction";
-	    }
-	    private static List<Integer> prioritizeRotationsBegin(int currentRotation,Player player,GameState gameState){
-	    	List<Integer> rotations;
-	    	switch(currentRotation) {
-	    	case 0:
-	    		rotations=List.of(90,270,180,0);
-	    		return rotations;
-	    	case 90:
-	    		rotations=Arrays.asList(180,0,270,90);
-	    		return rotations;
-	    	
-	    	case 180:
-	    		rotations=Arrays.asList(270,90,0,180);
-	    		return rotations;
-	    	case 270:
-	    		rotations=Arrays.asList(0,180,90,270);
-	    		return rotations;
-	    	
-	    	default:
-	    		break;
+	    /**
+	     * Finds the shortest path to an unvisited cell in the maze.
+	     *
+	     * @param maze  The maze object.
+	     * @param start The starting coordinate.
+	     * @return The shortest path to an unvisited coordinate.
+	     */
+	    public static List<Action> shortestPathToUnvisited(Maze maze, Coord start) {
+	    	if (maze.isDiscoveredUnvisited()) {
+	        PriorityQueue<Node> open = new PriorityQueue<>(Comparator.comparingInt(Node::getTotalCost));
+	        Map<Node, Node> visited = new HashMap<>();
+	        Set<Coord> visitedCoords = new HashSet<>();
+	        int currentRotation=maze.getCurrentRotation();
+	        
+	        open.offer(new Node(start, null, 0, 0, currentRotation));
+	        
+	        while (!open.isEmpty()) {
+	            Node current = open.poll();
+	            currentRotation=current.getCurrentRotation();
+	            
+
+	            if (!current.getCoord().isVisited()) {
+	                return reconstructPathToTarget(current, visited,maze);
+	            }
+
+	            visitedCoords.add(current.getCoord());
+
+
+	            for (Pair<Integer, Coord> pair : maze.canGetToCoordWithRotation(current.getCoord().getY(), 
+	            		current.getCoord().getX(), current.getCoord().getSquare())) {
+	                Coord nextCoord = pair.getValue();
+	                if (visitedCoords.contains(nextCoord)) {
+	                	continue;
+	                }
+	                if (nextCoord==maze.getTarget()) {
+	                	continue;
+	                }
+	                
+	                
+	                int rotation=pair.getKey();
+	                Action action;
+	                if (rotation==currentRotation) {
+	                	action=new MoveAction(currentRotation);
+	                }
+	                else {
+	                	action=new RotateAction(rotation);
+	                }
+	                int newCost=0;
+	                if (action instanceof RotateAction) {
+	                newCost = current.getCost()+2;
+	                
+	                }
+	                else {
+	                	newCost = current.getCost()+1;
+	                }
+	                
+	                int heuristic =0;
+	                Node newNode=new Node(nextCoord, action, newCost, heuristic,rotation);
+	                visited.put(newNode, current);
+	                visited.put(newNode, current);
+	                open.offer(newNode);
+	            }
+	        }
 	    	}
-	    	return Collections.emptyList();
+
+	        return Collections.emptyList(); // No path found
 	    }
 
-	    private static ArrayList<Integer> prioritizeRotations(int currentRotation,Player player,GameState gameState) {
-	    	int visitedZero=0;
-	    	int visitedNinety=0;
-	    	int visitedOneEighty=0;
-	    	int visitedTwoSeventy=0;
-	    	ArrayList<Integer> rotations=new ArrayList<Integer>();
-	    	ArrayList<Integer> visitedTimes=new ArrayList<Integer>();
-	    	if (player.getLocation(gameState.getCurrent().getX(), gameState.getCurrent().getY()-1)!=null) {
-        		visitedZero=player.getTimesVisited().get(new Pair<Integer,Integer>(gameState.getCurrent().getX(),gameState.getCurrent().getY()-1));
-        	}
-	    	else {
-	    		Coord coord=new Coord(gameState.getCurrent().getX(),gameState.getCurrent().getY()-1);
-	    		if (coord.whichNotWalls(gameState.getSquare()).contains(0)) {
-	    			rotations.add(0);
-	    			return rotations;
-	    			
-	    		}
-	    	}
-	    	if (player.getLocation(gameState.getCurrent().getX()+1, gameState.getCurrent().getY())!=null) {
-	    		visitedNinety=player.getTimesVisited().get(new Pair<Integer,Integer>(gameState.getCurrent().getX()+1,gameState.getCurrent().getY()));
-	    		
-	    	}
-	    	else {
-	    		Coord coord=new Coord(gameState.getCurrent().getX()+1,gameState.getCurrent().getY());
-	    		if (coord.whichNotWalls(gameState.getSquare()).contains(90)) {
-	    			rotations.add(90);
-	    			return rotations;
-	    			
-	    		}
-	    	}
-	    	if (player.getLocation(gameState.getCurrent().getX(), gameState.getCurrent().getY()+1)!=null) {
-	    		visitedOneEighty=player.getTimesVisited().get(new Pair<Integer,Integer>(gameState.getCurrent().getX(),gameState.getCurrent().getY()+1));
-	    		
-	    	}
-	    	else {
-	    		Coord coord=new Coord(gameState.getCurrent().getX(),gameState.getCurrent().getY()+1);
-	    		if (coord.whichNotWalls(gameState.getSquare()).contains(180)) {
-	    			rotations.add(180);
-	    			return rotations;
-	    			
-	    		}
-	    	}
-	    	if (player.getLocation(gameState.getCurrent().getX()-1, gameState.getCurrent().getY())!=null) {
-	    		visitedTwoSeventy=player.getTimesVisited().get(new Pair<Integer,Integer>(gameState.getCurrent().getX()-1,gameState.getCurrent().getY()));
-	    		
-	    	}
-	    	else {
-	    		Coord coord=new Coord(gameState.getCurrent().getX()-1,gameState.getCurrent().getY());
-	    		if (coord.whichNotWalls(gameState.getSquare()).contains(270)) {
-	    			rotations.add(270);
-	    			return rotations;
-	    			
-	    		}
-	    	}
-	    	visitedTimes.add(visitedZero);
-	    	visitedTimes.add(visitedNinety);
-	    	visitedTimes.add(visitedOneEighty);
-	    	visitedTimes.add(visitedTwoSeventy);
-	    	Collections.sort(visitedTimes);
-	    	
-	    	
-	    	for (int visited:visitedTimes) {
-	    		if (visited==visitedZero && !rotations.contains(0)) {
-	    			rotations.add(0);
-	    		}
-	    		else if (visited==visitedNinety && !rotations.contains(90)) {
-	    			rotations.add(90);
-	    		}
-	    		else if (visited==visitedOneEighty && !rotations.contains(180)) {
-	    			rotations.add(180);
-	    		}
-	    		else if (visited==visitedTwoSeventy && !rotations.contains(270)) {
-	    			rotations.add(270);
-	    		}
-	    	}
-	    	return rotations;
-	    }
 
+	    /**
+	     * Reconstructs the path to the target node.
+	     *
+	     * @param endNode The end node.
+	     * @param visited The visited nodes.
+	     * @param maze    The maze object.
+	     * @return The reconstructed path.
+	     */
+	    private static List<Action> reconstructPathToTarget(Node endNode, Map<Node, Node> visited,Maze maze) {
+	        List<Action> path = new ArrayList<>();
+	        Node current = endNode;
+	        while (current.getCoord()!=null) {
+	        	if (current.getAction() instanceof RotateAction) {
+	        		path.add(new MoveAction(current.getCurrentRotation()));
+	        		path.add(current.getAction());
+
+	        	}
+	        	else {
+	        		path.add(current.getAction());
+	        	}
+	            
+	            current = visited.get(current);
+	            if (current.getCoord()==maze.getCurrentPosition()) {
+	            	break;
+	            }
+	        }
+
+	        Collections.reverse(path);
+	        return path;
+	    }
+	    /**
+	     * Calculates the Manhattan distance between two coordinates.
+	     *
+	     * @param current The current coordinate.
+	     * @param target  The target coordinate.
+	     * @return The Manhattan distance between the two coordinates.
+	     */
+
+	    private static int calculateDistance(Coord current, Coord target) {
+	        
+	    	return Math.abs(target.getX() - current.getX()) + Math.abs(target.getY() - current.getY()); 
+	    }
+	    
+	    
+	    
+	    public static class Node {
+	        private final Coord coord;
+	        private final Action action;
+	        private final int currentRotation;
+	        private final int cost;
+	        private final int heuristic;
+
+	        public Node(Coord coord, Action action, int cost, int heuristic,int currentRotation) {
+	            this.coord = coord;
+	            this.action = action;
+	            this.cost = cost;
+	            this.heuristic = heuristic;
+	            this.currentRotation=currentRotation;
+	            
+	        }
+
+	        public Coord getCoord() {
+	            return coord;
+	        }
+
+	        public Action getAction() {
+	            return action;
+	        }
+
+	        public int getCost() {
+	            return cost;
+	        }
+
+	        public int getHeuristic() {
+	            return heuristic;
+	        }
+
+	        public int getTotalCost() {
+	            return heuristic+cost;
+	        }
+
+			public int getCurrentRotation() {
+				return currentRotation;
+			}
+
+			
+	    }
+	    
+	    
+	    
     
 
 	 public static class ActionGenerationResult {
 		    private Action action;
-		    private Player updatedPlayer;
+		    private Maze updatedMaze;
 		    public ActionGenerationResult() {
 		    	
 		    }
@@ -600,17 +524,16 @@ public class MazeSolver
 		    public Action getAction() {
 		        return action;
 		    }
-
 		    public void setAction(Action action) {
 		        this.action = action;
 		    }
 
-		    public Player getUpdatedPlayer() {
-		        return updatedPlayer;
+	
+		    public Maze getUpdatedMaze() {
+		    	return updatedMaze;
 		    }
-
-		    public void setUpdatedPlayer(Player updatedPlayer) {
-		        this.updatedPlayer = updatedPlayer;
+		    public void setUpdatedMaze(Maze maze) {
+		    	this.updatedMaze=maze;
 		    }
 		}
 
@@ -619,7 +542,7 @@ public class MazeSolver
 	    }
 
 	    public enum ActionType {
-	        MOVE, ROTATE
+	        MOVE, ROTATE, RESET
 	    }
 
 	    public static class MoveAction implements Action {
@@ -632,6 +555,20 @@ public class MazeSolver
 	        public int getRotation() {
 	            return rotation;
 	        }
+	        @Override
+	        public ActionType getType() {
+	            return type;
+	        }
+
+	        @Override
+	        public String toString() {
+	            return "MoveAction";
+	        }
+	    }
+	    public static class ResetAction implements Action {
+	        private final ActionType type = ActionType.RESET;
+
+	      
 	        @Override
 	        public ActionType getType() {
 	            return type;

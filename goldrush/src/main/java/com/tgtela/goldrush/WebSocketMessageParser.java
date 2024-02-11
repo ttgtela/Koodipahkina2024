@@ -1,14 +1,27 @@
 package com.tgtela.goldrush;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
+/**
+ * @author Tenho Laakkio.
+ * Code for the Monad 2024 Rekry challenge
+ */
+
+
+/**
+ * A utility class for parsing WebSocket messages to get the updated gamestate
+ */
 public class WebSocketMessageParser {
 	
+	/**
+     * Parses the game state from a JSON string.
+     * 
+     * @param gameStateJson The JSON string representing the game state.
+     * @return The parsed game state.
+     */
     public static GameState parseGameState(String gameStateJson) {
     	try {
     		JsonFactory jsonFactory = new JsonFactory();
@@ -68,6 +81,13 @@ public class WebSocketMessageParser {
 		
     	
     }
+	/**
+     * Parses the player value from a JSON String and
+     * 
+     * @param gameStateJson The JSON string representing the game state.
+     * @return The updated gameState with the player fields
+     * values on it
+     */
     private static GameState processPlayer(JsonParser jsonParser,GameState gameState) throws IOException {
     	Integer rotation=null;
     	Coord location = null;
@@ -86,6 +106,14 @@ public class WebSocketMessageParser {
         }
         return gameState;
     }
+	/**
+     * Parses the location from a JSON String and
+     * makes a new Coord value from it.
+     * 
+     * @param gameStateJson The JSON string representing the game state.
+     * @return The updated gameState with the location fields
+     * values on it.
+     */
     private static Coord processLocation(JsonParser jsonParser) throws IOException {
     	Integer x = null;
     	Integer y=null;
@@ -109,6 +137,12 @@ public class WebSocketMessageParser {
         	return null;
         }
     }
+	/**
+     * Parses the game instance from a JSON string.
+     * 
+     * @param gameInstanceJson The JSON string representing the game instance
+     * @return The parsed game instance
+     */
     public static GameInstance parseGameInstance(String gameInstanceJson) {
     	try {
     		JsonFactory jsonFactory = new JsonFactory();
