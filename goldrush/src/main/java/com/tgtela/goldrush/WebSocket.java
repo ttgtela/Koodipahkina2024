@@ -251,7 +251,7 @@ public class WebSocket extends WebSocketClient {
     
     public static void main( String[] args ) throws IOException
     {
-    	String levelId="01HENHM60KSP9T5D4PEX36CQ14";
+    	String levelId="01HENHM60KKHWHBM2Q10ZF2A1E";
     	String token="c6c27d12-1c54-4205-b257-a3281c77d3cf";
     	GameInstance gameInstance=createGame(levelId,token);
     	if (gameInstance!=null) {
@@ -266,7 +266,10 @@ public class WebSocket extends WebSocketClient {
 			}
     		WebSocket client = new WebSocket(serverUrl);
 	        client.connect();
+	        client.setConnectionLostTimeout(999999999);
+	       
 	        CompletableFuture<Void> webSocketFuture = client.getWebSocketFuture();
+	        webSocketFuture.join();
          	 
          	 try {
                  webSocketFuture.get(); 

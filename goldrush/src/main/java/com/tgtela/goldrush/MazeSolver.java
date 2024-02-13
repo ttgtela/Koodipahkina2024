@@ -473,6 +473,7 @@ public class MazeSolver
 	        private final int currentRotation;
 	        private final int cost;
 	        private final int heuristic;
+	        
 
 	        public Node(Coord coord, Action action, int cost, int heuristic,int currentRotation) {
 	            this.coord = coord;
@@ -500,13 +501,13 @@ public class MazeSolver
 	        }
 
 	        public int getTotalCost() {
-	            return heuristic+cost;
+	            return cost+heuristic;
 	        }
 
 			public int getCurrentRotation() {
 				return currentRotation;
 			}
-
+			
 			
 	    }
 	    

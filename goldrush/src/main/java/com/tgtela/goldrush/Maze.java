@@ -232,29 +232,33 @@ public class Maze{
 			if (notWall==0) {
 				if (row>0) {
 				
-				
+				if ((grid[row-1][col]!=target)){
 				canGetTo.add(grid[row-1][col]);
+				}
 				}
 			}
 			else if (notWall==90) {
 				if (col<cols-1) {
 				
-				
+					if ((grid[row][col+1]!=target)){
 				canGetTo.add(grid[row][col+1]);
+					}
 				}
 			}
 			else if (notWall==180) {
 				if (row<rows-1) {
 				
-				
+					if ((grid[row+1][col]!=target)){
 				canGetTo.add(grid[row+1][col]);
+					}
 				}
 			}
 			else if (notWall==270) {
 				if (col>0) {
 				
-				
+					if ((grid[row][col-1]!=target)){
 				canGetTo.add(grid[row][col-1]);
+					}
 				}
 			}
 		}
